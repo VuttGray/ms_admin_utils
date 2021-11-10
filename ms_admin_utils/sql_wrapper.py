@@ -1,8 +1,11 @@
 from enum import Enum
 from logging import getLogger
 from re import match
+from typing import List
 
 from pyodbc import connect as odbc_connect, DataError, ProgrammingError, OperationalError
+
+from ms_admin_utils.file_wrapper import walk_through_files
 
 logger = getLogger('logger')
 CONNECTION_STRING = "Driver={0};Server={1};Database={2};Trusted_Connection=yes;"
@@ -61,8 +64,12 @@ def __parse_db_path(db_path):
 
 
 def execute_wo_transaction(sql_queries: [str], server: str, db: str):
-    conn_str = CONNECTION_STRING.format('{' + conf.driver + '}', server, db)
-    with odbc_connect(conn_str, autocommit=True, timeout=600) as conn:
+    with odbc_connect(Driver=conf.driver,
+                      Server=server,
+                      Database=db,
+                      Trusted_Connection='yes',
+                      autocommit=True,
+                      timeout=600) as conn:
         cursor = conn.cursor()
         for sql_query in sql_queries:
             logger.debug('Execute query:\n' + sql_query)
@@ -72,8 +79,10 @@ def execute_wo_transaction(sql_queries: [str], server: str, db: str):
 
 
 def sql_select(sql_query: str, server: str, db: str):
-    conn_str = CONNECTION_STRING.format(conf.driver, server, db)
-    with odbc_connect(conn_str) as conn:
+    with odbc_connect(Driver=conf.driver,
+                      Server=server,
+                      Database=db,
+                      Trusted_Connection='yes') as conn:
         cursor = conn.cursor()
         cursor.execute(sql_query)
         return cursor.fetchall()
@@ -87,8 +96,10 @@ def sql_select_1st_row(sql_query: str, server: str, db: str):
 def sql_update(sql_query, server, db, expected_result=True):
     if not sql_query:
         return
-    conn_str = CONNECTION_STRING.format(conf.driver, server, db)
-    with odbc_connect(conn_str) as conn:
+    with odbc_connect(Driver=conf.driver,
+                      Server=server,
+                      Database=db,
+                      Trusted_Connection='yes') as conn:
         cursor = conn.cursor()
         try:
             cursor.execute(sql_query)
@@ -108,10 +119,11 @@ def restore_db(server: str,
                db: str,
                backup_path: str,
                db_folder: str = None,
-               initial_db_file_names: str = None,
+               initial_db_file_names: List[str] = None,
                recovery_mode: str = None,
                set_single_user: bool = True,
-               set_multi_user: bool = True):
+               set_multi_user: bool = True,
+               scripts_folder: str = None):
     queries = []
     restore_query = ""
     modify_file = ""
@@ -136,6 +148,18 @@ def restore_db(server: str,
         queries.append(f"alter database [{db}] set multi_user\n")
 
     execute_wo_transaction(queries, server, conf.master_db)
+
+    if scripts_folder:
+        execute_scripts(server, db, scripts_folder)
+
+
+def execute_scripts(server: str, db: str, scripts_folder: str):
+    for path, file in walk_through_files(scripts_folder, ['.sql']):
+        with open(path, 'r') as f:
+            query = f.read()
+            logger.info(f'Run {file}')
+            print(f'Run {file}')
+            execute_wo_transaction([query], server, db)
 
 
 def drop_user(login: str, server: str, db: str):
