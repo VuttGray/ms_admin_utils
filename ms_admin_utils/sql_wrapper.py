@@ -104,8 +104,14 @@ def sql_update(sql_query, server, db, expected_result=True):
             return ex.args[-1]
 
 
-def restore_db(server, db, backup_path, db_folder=None, initial_db_file_names=None,
-               recovery_mode=None, set_single_user=True, set_multi_user=True):
+def restore_db(server: str,
+               db: str,
+               backup_path: str,
+               db_folder: str = None,
+               initial_db_file_names: str = None,
+               recovery_mode: str = None,
+               set_single_user: bool = True,
+               set_multi_user: bool = True):
     queries = []
     restore_query = ""
     modify_file = ""
