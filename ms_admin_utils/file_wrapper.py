@@ -137,8 +137,11 @@ def zip_backup(source, target, depth, file_format):
                 ZipFile(zip_path, 'w', ZIP_DEFLATED).write(source, os_path.basename(source))
 
 
-def file_exists(folder: str, file_name: str) -> bool:
-    file_path = join_paths(folder, file_name)
+def file_exists(folder: str = None,
+                file_name: str = None,
+                file_path: str = None) -> bool:
+    if not file_path:
+        file_path = join_paths(folder, file_name)
     return os_path.exists(file_path)
 
 
