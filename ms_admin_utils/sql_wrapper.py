@@ -123,7 +123,8 @@ def restore_db(server: str,
                recovery_mode: str = None,
                set_single_user: bool = True,
                set_multi_user: bool = True,
-               scripts_folder: str = None):
+               post_scripts_folder: str = None,
+               trancate: bool = False):
     queries = []
     restore_query = ""
     modify_file = ""
@@ -147,10 +148,23 @@ def restore_db(server: str,
     if set_multi_user:
         queries.append(f"alter database [{db}] set multi_user\n")
 
+    logger.info(f'Start restoring {server}.{db}')
     execute_wo_transaction(queries, server, conf.master_db)
+    logger.info(f'Finish restoring {server}.{db}')
 
-    if scripts_folder:
-        execute_scripts(server, db, scripts_folder)
+    if post_scripts_folder:
+        logger.info(f'Start post-processing after restoring for {server}.{db}')
+        execute_scripts(server, db, post_scripts_folder)
+
+    if trancate:
+        logger.info(f'Start shrink db files for {server}.{db}')
+        trancate_db(server, db)
+
+
+def trancate_db(server: str, db: str):
+    queries = [f"DBCC SHRINKFILE (N'{db}' , 0, TRUNCATEONLY)",
+               f"DBCC SHRINKFILE (N'{db}_log' , 0, TRUNCATEONLY)"]
+    execute_wo_transaction(queries, server, db)
 
 
 def execute_scripts(server: str, db: str, scripts_folder: str):
