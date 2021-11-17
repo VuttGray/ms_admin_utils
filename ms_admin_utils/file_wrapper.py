@@ -1,6 +1,6 @@
 import re
 from datetime import date, datetime, timedelta
-from os import path as os_path, sep, listdir, walk, stat
+from os import path as os_path, sep, listdir, walk, stat, makedirs
 from re import compile as re_compile
 from shutil import copy2, make_archive
 from typing import Union, List
@@ -145,6 +145,15 @@ def file_exists(folder: str = None,
     return os_path.exists(file_path)
 
 
+def folder_exists(folder: str = None) -> bool:
+    return os_path.exists(folder)
+
+
+def folder_create(folder: str):
+    if not os_path.exists(folder):
+        makedirs(folder)
+
+
 def get_file_size(folder: str, file_name: str) -> int:
     file_path = join_paths(folder, file_name)
     return stat(file_path).st_size
@@ -156,3 +165,8 @@ def backup(backup_tasks: List):
             zip_backup(task['source'], task['target'], task['depth'], task['file_format'])
         else:
             raise UnsupportedBackupTask(task)
+
+
+def write_to_file(path: str, content: str):
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(content)
