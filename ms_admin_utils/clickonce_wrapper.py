@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 
 from ms_admin_utils.file_wrapper import join_paths, get_folders_list, get_modify_dt
 
@@ -46,7 +46,7 @@ class ClickonceApplication:
         self.__last_version_name = ''
         self.load_versions()
         self.next_version_name = _get_next_version_name(self.last_version.name)
-        self.next_start_date = self.last_version.publish_date + timedelta(days=1)
+        self.next_start_date = self.last_version.publish_date
 
     def load_versions(self):
         app_path = join_paths(conf.root_path, self.folder, conf.app_folder)
