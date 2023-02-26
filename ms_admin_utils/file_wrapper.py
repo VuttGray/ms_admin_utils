@@ -1,3 +1,4 @@
+import os
 import re
 from datetime import date, datetime, timedelta
 from os import path as os_path, sep, listdir, walk, stat, makedirs
@@ -11,11 +12,22 @@ class UnsupportedBackupTask(Exception):
     pass
 
 
-def read(folder: str, file: str, full_path: str = None, encoding: str = None):
+def computer_name():
+    return os.environ['COMPUTERNAME']
+
+
+def read(folder: str, file: str, full_path: str = None, encoding: str = "UTF-8"):
     if folder and file:
         full_path = os_path.join(folder, file)
     with open(full_path, 'r', encoding=encoding) as f:
         return f.read()
+
+
+def read_lines(folder: str, file: str, full_path: str = None, encoding: str = "UTF-8"):
+    if folder and file:
+        full_path = os_path.join(folder, file)
+    with open(full_path, 'r', encoding=encoding) as f:
+        return f.readlines()
 
 
 def write(folder: str, file: str, text: str, full_path: str = None, encoding: str = None):
@@ -44,6 +56,11 @@ def get_extension(path: str):
     ext = path.split('.')[-1].lower()
     if ext and len(ext) in range(1, 5) and '\\' not in ext and '/' not in ext:
         return ext
+
+
+def split_file_name(file_name: str) -> (str, str):
+    file_name, ext = os.path.splitext(file_name)
+    return file_name, ext[1:]
 
 
 def get_modify_dt(path: str, with_time: bool = True) -> Union[datetime, date]:
@@ -111,6 +128,11 @@ def find_extension(path_wo_extension, extensions):
             return ext
 
 
+def add_file_name_prefix(file_name: str, prefix: str, separator: str = "_") -> str:
+    file_name, ext = split_file_name(file_name)
+    return f"{file_name}{separator}{prefix}.{ext}"
+
+
 def remove_root_from_path(path, root_path):
     return os_path.normpath(path)[len(os_path.normpath(root_path)):]
 
@@ -170,3 +192,10 @@ def backup(backup_tasks: List):
 def write_to_file(path: str, content: str):
     with open(path, 'w', encoding='utf-8') as f:
         f.write(content)
+
+
+def rename_file(src: str, dst: str, path: str = None):
+    if path:
+        src = join_paths(path, src)
+        dst = join_paths(path, dst)
+    os.rename(src, dst)
