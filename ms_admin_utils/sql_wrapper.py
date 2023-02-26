@@ -58,6 +58,27 @@ class JobSubsystem(Enum):
     PS = 'PowerShell'  # PowerShell Script
 
 
+class Database:
+    def __init__(self, data_row):
+        self.server = data_row.server
+        self.name = data_row.name
+        self.create_date = data_row.create_date
+        self.compatibility_level = data_row.compatibility_level
+        self.user_access = data_row.user_access_desc
+        self.is_read_only = data_row.is_read_only
+        self.state = data_row.state_desc
+        self.is_in_standby = data_row.is_in_standby
+        self.is_cleanly_shutdown = data_row.is_cleanly_shutdown
+        self.recovery_model = data_row.recovery_model_desc
+        self.is_fulltext_enabled = data_row.is_fulltext_enabled
+        self.is_master_key_encrypted_by_server = data_row.is_master_key_encrypted_by_server
+        self.is_broker_enabled = data_row.is_broker_enabled
+        self.is_encrypted = data_row.is_encrypted
+        self.recovery_mode = data_row.recovery_mode
+        self.status = data_row.status
+        self.user_access = data_row.user_access
+
+
 def __parse_db_path(db_path):
     server, db = db_path.split('.')
     return server, db
@@ -115,6 +136,40 @@ def sql_update(sql_query, server, db, expected_result=True):
             return ex.args[-1]
 
 
+def get_db(server: str, db_name: str) -> Database:
+    dbs = get_dbs(server=server, db_name=db_name)
+    if dbs:
+        return dbs[0]
+
+
+def get_dbs(server: str, db_name: str) -> List[Database]:
+    query = "select @@SERVERNAME as server" \
+            "      ,d.name " \
+            "      ,d.create_date " \
+            "      ,d.compatibility_level " \
+            "      ,d.user_access_desc " \
+            "      ,d.is_read_only " \
+            "      ,d.state_desc " \
+            "      ,d.is_in_standby " \
+            "      ,d.is_cleanly_shutdown " \
+            "      ,d.recovery_model_desc " \
+            "      ,d.is_fulltext_enabled " \
+            "      ,d.is_master_key_encrypted_by_server " \
+            "      ,d.is_broker_enabled " \
+            "      ,d.is_encrypted " \
+            "      ,cast(databasepropertyex(d.name, 'Recovery') as varchar(128)) as recovery_mode " \
+            "      ,cast(databasepropertyex(d.name, 'Status') as varchar(128)) as status " \
+            "      ,cast(databasepropertyex(d.name, 'UserAccess') as varchar(128)) as user_access " \
+            "from sys.databases d "
+    if db_name:
+        query += f" where name = '{db_name}'"
+    else:
+        query += f" where d.name not in ('master','tempdb','model','msdb')"
+
+    cursor = sql_select(query, server, conf.master_db)
+    return [Database(row) for row in cursor]
+
+
 def restore_db(server: str,
                db: str,
                backup_path: str,
@@ -128,7 +183,10 @@ def restore_db(server: str,
     queries = []
     restore_query = ""
     modify_file = ""
-    if set_single_user:
+
+    database = get_db(server, db)
+    
+    if set_single_user and database:
         queries.append(f"alter database [{db}] set single_user with rollback immediate;\n")
 
     restore_query += f"restore database [{db}] from disk = N'{backup_path}' \n" \
@@ -155,10 +213,14 @@ def restore_db(server: str,
     if post_scripts_folder:
         logger.info(f'Start post-processing after restoring for {server}.{db}')
         execute_scripts(server, db, post_scripts_folder)
+        logger.info(f'Finish post-processing after restoring for {server}.{db}')
 
     if trancate:
         logger.info(f'Start shrink db files for {server}.{db}')
         trancate_db(server, db)
+        logger.info(f'Finish shrink db files for {server}.{db}')
+
+    logger.info(f'Finish all actions to restore {server}.{db}')
 
 
 def trancate_db(server: str, db: str):
@@ -172,12 +234,17 @@ def execute_scripts(server: str, db: str, scripts_folder: str):
         with open(path, 'r') as f:
             query = f.read()
             logger.info(f'Run {file}')
-            print(f'Run {file}')
+            print(query)
             execute_wo_transaction([query], server, db)
 
 
 def drop_user(login: str, server: str, db: str):
     execute_wo_transaction([f"exec sp_dropuser '{login}'"], server, db)
+
+
+def drop_object(server: str, db: str, object_type: str, object_name: str, schema: str = 'dbo'):
+    queries = [f'drop {object_type} [{schema}].[{object_name}]']
+    execute_wo_transaction(queries, server, db)
 
 
 def grant_permission(permission: str, sql_object: str, principal: str, server: str, db: str):
@@ -218,6 +285,26 @@ def get_referencing_objects(server, db, name, schema='dbo'):
             f"left join sys.objects o on r.referencing_id = o.object_id "
     cursor = sql_select(query, server, db)
     return cursor
+
+
+def get_related_objects(mode: str, server: str, db: str, name: str, schema: str = 'dbo'):
+    objects = []
+    query = ''
+    try:
+        if mode == 'referenced':
+            cursor = get_referenced_objects(server, db, name, schema)
+        elif mode == 'referencing':
+            cursor = get_referencing_objects(server, db, name, schema)
+        else:
+            raise NotImplementedError(f'The mode "{mode}" does not supported')
+
+        for row in cursor:
+            objects.append((row.name, row.type))
+
+        return objects, None
+    except Exception as ex:
+        logger.debug(query)
+        return objects, ex
 
 
 def get_sql_code(sql_object, server, db):
@@ -302,27 +389,6 @@ def compare_table_structures(file_path, db_path):
                 print(f'{t}.{c}')
 
 
-def get_dbs(server: str) -> list:
-    query = "select @@SERVERNAME as server" \
-            "      ,d.name " \
-            "      ,d.create_date " \
-            "      ,d.compatibility_level " \
-            "      ,d.user_access_desc " \
-            "      ,d.is_read_only " \
-            "      ,d.state_desc " \
-            "      ,d.is_in_standby " \
-            "      ,d.is_cleanly_shutdown " \
-            "      ,d.recovery_model_desc " \
-            "      ,d.is_fulltext_enabled " \
-            "      ,d.is_master_key_encrypted_by_server " \
-            "      ,d.is_broker_enabled " \
-            "      ,d.is_encrypted " \
-            "from sys.databases d " \
-            "where name not in ('master','tempdb','model','msdb')"
-    cursor = sql_select(query, server, conf.master_db)
-    return [MsDatabase(row) for row in cursor]
-
-
 def get_tables(server, db, like_filter=None):
     query = "select name from sys.tables"
     if like_filter:
@@ -368,24 +434,6 @@ def get_sql_message(sql_message_id, server, db):
     cursor = sql_select(query, server, db)
     for row in cursor:
         return row.message
-
-
-class MsDatabase:
-    def __init__(self, data_row):
-        self.server = data_row.server
-        self.name = data_row.name
-        self.create_date = data_row.create_date
-        self.compatibility_level = data_row.compatibility_level
-        self.user_access = data_row.user_access_desc
-        self.is_read_only = data_row.is_read_only
-        self.state = data_row.state_desc
-        self.is_in_standby = data_row.is_in_standby
-        self.is_cleanly_shutdown = data_row.is_cleanly_shutdown
-        self.recovery_model = data_row.recovery_model_desc
-        self.is_fulltext_enabled = data_row.is_fulltext_enabled
-        self.is_master_key_encrypted_by_server = data_row.is_master_key_encrypted_by_server
-        self.is_broker_enabled = data_row.is_broker_enabled
-        self.is_encrypted = data_row.is_encrypted
 
 
 def sql_job_add_next_step(server: str,
