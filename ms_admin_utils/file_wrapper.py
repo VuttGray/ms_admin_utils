@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from datetime import date, datetime, timedelta
@@ -145,13 +146,37 @@ def remove_extension_from_path(path):
         return path
 
 
-def zip_backup(source, target, depth, file_format):
-    bo_base_name = get_last_part(source)
+def get_delta(delta: int, delta_unit: str):
+    weeks = delta if delta_unit == "week" else 0
+    days = delta if delta_unit == "day" else 0
+    hours = delta if delta_unit == "hour" else 0
+    minutes = delta if delta_unit == "minute" else 0
+    return timedelta(weeks=weeks, days=days, hours=hours, minutes=minutes)
+
+
+def purge_archive(path: str, depth: dict, extensions: list[str], mask: str):
+    days = int(depth.get('day', "0"))
+    weeks = int(depth.get('week', "0"))
+    monthes = int(depth.get('month', "0"))
+    year = int(depth.get('year', "0"))
+    for p, f in walk_through_files(path, extensions):
+        # print(p)
+        pass
+        # TODO: Add checks how old the file and remove if it's
+
+
+def zip_backup(source, target, freq, file_format, base_name = '', freq_unit = 'day', arch_depth = {}):
+    if not os_path.exists(target) or not os_path.isdir(target):
+        raise NotADirectoryError(f"Directory {target} does not exist")
+    if arch_depth:
+        purge_archive(target, arch_depth, ['.' + file_format], '*')
+    bo_base_name = base_name if base_name else get_last_part(source)
     bo_target_path = get_last_backup_file(target, bo_base_name, ['.' + file_format])
-    bo_base_name = bo_base_name + f'_{date.today():%Y%m%d}'
     bo_modify_dt = get_modify_dt(bo_target_path)
-    if not bo_modify_dt or bo_modify_dt < datetime.today() - timedelta(days=depth):
+    delta = get_delta(freq, freq_unit)
+    if not bo_modify_dt or bo_modify_dt < datetime.today() - delta:
         if os_path.exists(source):
+            bo_base_name = bo_base_name + f'_{datetime.today():%Y-%m-%d-%H-%M}'
             if os_path.isdir(source):
                 make_archive(join_paths(target, bo_base_name), file_format, source)
             else:
@@ -181,10 +206,24 @@ def get_file_size(folder: str, file_name: str) -> int:
     return stat(file_path).st_size
 
 
+def save_as_json(data, folder_path: str, file_name: str, data_cls = None):
+    if not file_name.endswith(".json"):
+        file_name += ".json"
+    path = join_paths(folder_path, file_name)
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4, cls=data_cls)
+
+
 def backup(backup_tasks: List):
     for task in backup_tasks:
         if task['type'] == 'zip':
-            zip_backup(task['source'], task['target'], task['depth'], task['file_format'])
+            zip_backup(source=task['source'], 
+                       target=task['target'], 
+                       freq=task['freq'],
+                       freq_unit=task['freq_unit'],
+                       file_format=task['file_format'],
+                       base_name=task.get('base_name', ''), 
+                       arch_depth=task.get('arch_depth', {}))
         else:
             raise UnsupportedBackupTask(task)
 
